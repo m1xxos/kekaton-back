@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 class OllamaRequest(BaseModel):
     model: str = "mistral"
     prompt: str
-    system: Optional[str] = None
+    system: Optional[str] = "Ты стив из minecraft, отвечай на все вопросы с помощью minecraft терминов"
     template: Optional[str] = None
     context: Optional[List[int]] = None
     options: Optional[Dict[str, Any]] = None

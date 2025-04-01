@@ -12,6 +12,9 @@ import ollama
 # Load environment variables
 load_dotenv()
 
+# Системное сообщение по умолчанию
+DEFAULT_SYSTEM_MESSAGE = "Ты стив из минекруфта, отвечай на все вопросы с помощью minecraft терминов"
+
 app = FastAPI(
     title="Ollama API Proxy",
     description="API для проксирования запросов к Ollama LLM",
@@ -117,7 +120,7 @@ def generate(request: OllamaRequest):
         # Извлекаем параметры из запроса
         model = request.model
         prompt = request.prompt
-        system = request.system
+        system = request.system or DEFAULT_SYSTEM_MESSAGE
         options = request.options or {}
         
         # Используем клиент для генерации ответа
@@ -155,17 +158,17 @@ def chat(request: OllamaRequest):
         # Извлекаем параметры из запроса
         model = request.model
         prompt = request.prompt
-        system = request.system
+        # Используем заданное системное сообщение или наше по умолчанию
+        system = request.system or DEFAULT_SYSTEM_MESSAGE
         options = request.options or {}
         
         messages = []
         
-        # Добавляем системное сообщение, если оно есть
-        if system:
-            messages.append({
-                "role": "system",
-                "content": system
-            })
+        # Добавляем системное сообщение
+        messages.append({
+            "role": "system",
+            "content": system
+        })
         
         # Добавляем основное сообщение пользователя
         messages.append({
@@ -187,109 +190,6 @@ def chat(request: OllamaRequest):
             error=f"Ошибка при обработке чата: {str(e)}",
             status_code=500
         )
-
-
-@app.post("/stream")
-def stream(request: OllamaRequest):
-    """Потоковая генерация от Ollama."""
-    # Проверяем, что поток включен
-    if not request.stream:
-        request.stream = True
-    
-    # Извлекаем параметры из запроса
-    model = request.model
-    prompt = request.prompt
-    system = request.system
-    options = request.options or {}
-    
-    # Функция для потоковой генерации
-    def generate():
-        try:
-            for chunk in client.generate(
-                model=model,
-                prompt=prompt,
-                system=system,
-                options=options,
-                stream=True
-            ):
-                yield f"data: {json.dumps(chunk)}\n\n"
-        except Exception as e:
-            error_json = ErrorResponse(
-                error=f"Ошибка при генерации потока: {str(e)}",
-                status_code=500
-            ).model_dump_json()
-            yield f"data: {error_json}\n\n"
-    
-    # Возвращаем поток событий
-    return StreamingResponse(
-        generate(), 
-        media_type="text/event-stream"
-    )
-
-
-@app.post("/completions")
-def completions(prompt: str = "", model: str = "llama3.1:latest"):
-    """Простой эндпоинт для генерации текста."""
-    try:
-        # Используем клиент для генерации текста
-        response = client.generate(
-            model=model,
-            prompt=prompt
-        )
-        
-        # Форматируем ответ
-        return {
-            "model": model,
-            "completion": response.get("response", ""),
-            "done": True,
-            "stats": {
-                "total_duration": response.get("total_duration", 0),
-                "tokens": response.get("eval_count", 0)
-            }
-        }
-        
-    except Exception as e:
-        return {
-            "error": f"Ошибка при генерации текста: {str(e)}",
-            "status_code": 500
-        }
-
-
-@app.post("/models/pull/{model_name}")
-def pull_model(model_name: str):
-    """Загрузить модель из репозитория Ollama."""
-    try:
-        # Запускаем асинхронную загрузку модели
-        result = {"status": "started", "message": f"Started pulling model {model_name}"}
-        
-        # В реальном приложении здесь можно запустить фоновый процесс
-        # Но для демонстрации сделаем синхронную загрузку
-        client.pull(model_name)
-        
-        return result
-    except Exception as e:
-        return {
-            "status": "error",
-            "message": f"Failed to pull model: {str(e)}"
-        }
-
-
-# Добавим упрощенный эндпоинт для чата для демонстрации
-@app.post("/simple-chat")
-def simple_chat(model: str = "llama3.1", message: str = ""):
-    """Простой интерфейс чата."""
-    try:
-        response = client.chat(
-            model=model,
-            messages=[{"role": "user", "content": message}]
-        )
-        
-        return response
-    except Exception as e:
-        return {
-            "error": f"Ошибка в чате: {str(e)}",
-            "status_code": 500
-        }
 
 
 if __name__ == "__main__":
