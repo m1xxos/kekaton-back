@@ -2,11 +2,6 @@ from typing import Dict, List, Optional, Any, Union
 from pydantic import BaseModel, Field
 
 
-class MsgPayload(BaseModel):
-    msg_id: Optional[int]
-    msg_name: str
-
-
 class OllamaRequest(BaseModel):
     model: str
     prompt: str
@@ -22,7 +17,6 @@ class OllamaRequest(BaseModel):
 
 class OllamaResponse(BaseModel):
     model: str
-    created_at: str
     response: str
     done: bool
     total_duration: Optional[int] = None
@@ -36,3 +30,8 @@ class OllamaResponse(BaseModel):
 class ErrorResponse(BaseModel):
     error: str
     status_code: int = Field(default=500)
+
+
+class MsgPayload(BaseModel):
+    msg_id: int
+    msg_name: str

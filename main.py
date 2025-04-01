@@ -1,10 +1,13 @@
 import os
+import json
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-import httpx
-import json
+from fastapi.responses import StreamingResponse
 from dotenv import load_dotenv
 from models import OllamaRequest, OllamaResponse, ErrorResponse, MsgPayload
+
+# Импортируем официальную библиотеку ollama
+import ollama
 
 # Load environment variables
 load_dotenv()
@@ -25,13 +28,15 @@ app.add_middleware(
 )
 
 # Default Ollama URL
-OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://192.168.1.221:11434")
+# Устанавливаем хост для библиотеки ollama
+ollama.host = OLLAMA_BASE_URL
 
 messages_list: dict[int, MsgPayload] = {}
 
 
 @app.get("/")
-async def root():
+def root():
     return {"message": "Ollama API Proxy is running"}
 
 
@@ -41,17 +46,19 @@ def about() -> dict[str, str]:
 
 
 @app.get("/health")
-async def health_check():
+def health_check():
     """Check if Ollama is running and accessible."""
+    models = ollama.list()
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            response = await client.get(f"{OLLAMA_BASE_URL}")
-            return {
-                "status": "ok", 
-                "ollama_status": "running" if response.status_code < 400 else "error",
-                "details": f"Status code: {response.status_code}"
-            }
-    except httpx.RequestError as e:
+        # Получаем информацию о списке моделей для проверки подключения
+        models = ollama.list()
+        return {
+            "status": "ok", 
+            "ollama_status": "running",
+            "models_count": len(models.get("models", [])),
+            "details": "Ollama API is properly configured and running"
+        }
+    except Exception as e:
         return {
             "status": "error",
             "ollama_status": "not running or not accessible",
@@ -76,122 +83,196 @@ def message_items() -> dict[str, dict[int, MsgPayload]]:
 
 
 @app.get("/models")
-async def list_models():
+def list_models():
     """Получить список доступных моделей из Ollama."""
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.get(f"{OLLAMA_BASE_URL}/api/tags")
+        # Используем официальный клиент для получения списка моделей
+        result = ollama.list()
+        
+        # Форматируем ответ
+        if "models" in result:
+            model_names = [model.get("name") for model in result.get("models", [])]
+            return {
+                "status": "ok",
+                "models_count": len(model_names),
+                "models": model_names
+            }
+        else:
+            return {
+                "status": "warning",
+                "message": "Unexpected response format from Ollama",
+                "raw_data": result
+            }
             
-            # Check for valid JSON response
-            try:
-                return response.json()
-            except json.JSONDecodeError:
-                return {
-                    "error": "Invalid JSON response from Ollama",
-                    "response_text": response.text[:200],  # First 200 chars of response for debugging
-                    "status_code": response.status_code
-                }
-                
-    except httpx.RequestError as e:
+    except Exception as e:
         return {
-            "error": f"Ошибка соединения с Ollama: {str(e)}",
-            "status_code": 503,
-            "details": "Make sure Ollama is running on your machine"
+            "status": "error",
+            "message": f"Exception during API call: {str(e)}"
         }
 
 
 @app.post("/generate")
-async def generate(request: OllamaRequest):
+def generate(request: OllamaRequest):
     """Сгенерировать ответ от модели Ollama."""
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(
-                f"{OLLAMA_BASE_URL}/api/generate",
-                json=request.model_dump(exclude_none=True)
-            )
-            
-            try:
-                json_response = response.json()
-                
-                if response.status_code != 200:
-                    return ErrorResponse(
-                        error=f"Ollama вернул ошибку: {json_response.get('error', response.text)}",
-                        status_code=response.status_code
-                    )
-                
-                return OllamaResponse(**json_response)
-            except json.JSONDecodeError:
-                return ErrorResponse(
-                    error=f"Ollama вернул некорректный JSON. Response: {response.text[:200]}",
-                    status_code=500
-                )
-                
-    except httpx.RequestError as e:
+        # Извлекаем параметры из запроса
+        model = request.model
+        prompt = request.prompt
+        system = request.system
+        options = request.options or {}
+        
+        # Используем официальный клиент для генерации ответа
+        response = ollama.generate(
+            model=model,
+            prompt=prompt,
+            system=system,
+            options=options
+        )
+        
+        # Форматируем ответ
+        return {
+            "model": response.get("model"),
+            "response": response.get("response"),
+            "done": True,
+            "total_duration": response.get("total_duration"),
+            "load_duration": response.get("load_duration"),
+            "prompt_eval_count": response.get("prompt_eval_count"),
+            "prompt_eval_duration": response.get("prompt_eval_duration"),
+            "eval_count": response.get("eval_count"),
+            "eval_duration": response.get("eval_duration")
+        }
+        
+    except Exception as e:
         return ErrorResponse(
-            error=f"Ошибка соединения с Ollama: {str(e)}",
-            status_code=503
+            error=f"Ошибка при генерации ответа: {str(e)}",
+            status_code=500
         )
 
 
 @app.post("/chat")
-async def chat(request: OllamaRequest):
+def chat(request: OllamaRequest):
     """Отправить запрос в чат Ollama."""
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(
-                f"{OLLAMA_BASE_URL}/api/chat",
-                json=request.model_dump(exclude_none=True)
-            )
-            
-            try:
-                json_response = response.json()
-                
-                if response.status_code != 200:
-                    return ErrorResponse(
-                        error=f"Ollama вернул ошибку: {json_response.get('error', response.text)}",
-                        status_code=response.status_code
-                    )
-                    
-                return json_response
-            except json.JSONDecodeError:
-                return ErrorResponse(
-                    error=f"Ollama вернул некорректный JSON. Response: {response.text[:200]}",
-                    status_code=500
-                )
-                
-    except httpx.RequestError as e:
+        # Извлекаем параметры из запроса
+        model = request.model
+        prompt = request.prompt
+        system = request.system
+        options = request.options or {}
+        
+        messages = []
+        
+        # Добавляем системное сообщение, если оно есть
+        if system:
+            messages.append({
+                "role": "system",
+                "content": system
+            })
+        
+        # Добавляем основное сообщение пользователя
+        messages.append({
+            "role": "user",
+            "content": prompt
+        })
+        
+        # Используем официальный клиент для генерации ответа
+        response = ollama.chat(
+            model=model,
+            messages=messages,
+            options=options
+        )
+        
+        return response
+        
+    except Exception as e:
         return ErrorResponse(
-            error=f"Ошибка соединения с Ollama: {str(e)}",
-            status_code=503
+            error=f"Ошибка при обработке чата: {str(e)}",
+            status_code=500
         )
 
 
 @app.post("/stream")
-async def stream(request: OllamaRequest, response: Response):
+def stream(request: OllamaRequest):
     """Потоковая генерация от Ollama."""
+    # Проверяем, что поток включен
     if not request.stream:
-        request.stream = True  # Принудительно включаем stream для этого эндпоинта
-
-    async def stream_response():
+        request.stream = True
+    
+    # Извлекаем параметры из запроса
+    model = request.model
+    prompt = request.prompt
+    system = request.system
+    options = request.options or {}
+    
+    # Функция для потоковой генерации
+    def generate():
         try:
-            async with httpx.AsyncClient(timeout=60.0) as client:
-                async with client.stream(
-                    "POST",
-                    f"{OLLAMA_BASE_URL}/api/generate",
-                    json=request.model_dump(exclude_none=True),
-                    timeout=60.0
-                ) as r:
-                    async for chunk in r.aiter_text():
-                        yield f"data: {chunk}\n\n"
-        except httpx.RequestError as e:
+            for chunk in ollama.generate(
+                model=model,
+                prompt=prompt,
+                system=system,
+                options=options,
+                stream=True
+            ):
+                yield f"data: {json.dumps(chunk)}\n\n"
+        except Exception as e:
             error_json = ErrorResponse(
-                error=f"Ошибка соединения с Ollama: {str(e)}",
-                status_code=503
+                error=f"Ошибка при генерации потока: {str(e)}",
+                status_code=500
             ).model_dump_json()
             yield f"data: {error_json}\n\n"
     
-    response.headers["Content-Type"] = "text/event-stream"
-    return stream_response()
+    # Возвращаем поток событий
+    return StreamingResponse(
+        generate(), 
+        media_type="text/event-stream"
+    )
+
+
+@app.post("/completions")
+def completions(prompt: str = "", model: str = "llama3.1:latest"):
+    """Простой эндпоинт для генерации текста."""
+    try:
+        # Используем официальный клиент для генерации текста
+        response = ollama.generate(
+            model=model,
+            prompt=prompt
+        )
+        
+        # Форматируем ответ
+        return {
+            "model": model,
+            "completion": response.get("response", ""),
+            "done": True,
+            "stats": {
+                "total_duration": response.get("total_duration", 0),
+                "tokens": response.get("eval_count", 0)
+            }
+        }
+        
+    except Exception as e:
+        return {
+            "error": f"Ошибка при генерации текста: {str(e)}",
+            "status_code": 500
+        }
+
+
+@app.post("/models/pull/{model_name}")
+def pull_model(model_name: str):
+    """Загрузить модель из репозитория Ollama."""
+    try:
+        # Запускаем асинхронную загрузку модели
+        result = {"status": "started", "message": f"Started pulling model {model_name}"}
+        
+        # В реальном приложении здесь можно запустить фоновый процесс
+        # Но для демонстрации сделаем синхронную загрузку
+        ollama.pull(model_name)
+        
+        return result
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Failed to pull model: {str(e)}"
+        }
 
 
 if __name__ == "__main__":
