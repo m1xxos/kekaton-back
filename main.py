@@ -1,4 +1,5 @@
 import os
+import re
 import json
 import uuid
 import datetime
@@ -257,14 +258,30 @@ def minecraft_view(request: Request, response_id: str):
         )
     
     response_data = responses_storage[response_id]
+    prompt = response_data["prompt"]
+    
+    # Извлекаем имя из запроса (если есть паттерн "Называй меня X")
+
+    player_name = "Игрок"
+    name_match = re.search(r"Называй меня (\w+)", prompt)
+    
+    if name_match:
+        player_name = name_match.group(1)
+        # Убираем "Называй меня X" из отображаемого запроса
+        cleaned_prompt = re.sub(r"Называй меня \w+\.\s*", "", prompt)
+        cleaned_prompt = re.sub(r"Называй меня \w+\s*", "", cleaned_prompt)
+    else:
+        cleaned_prompt = prompt
+    
     return templates.TemplateResponse(
         "minecraft.html", 
         {
             "request": request, 
             "response": response_data["response"], 
-            "prompt": response_data["prompt"],
+            "prompt": cleaned_prompt,
+            "player_name": player_name,
             "model": response_data["model"],
-            "total_duration": response_data.get("total_duration", 0) / 1000000 if response_data.get("total_duration") else 0,  # Конвертируем в секунды
+            "total_duration": response_data.get("total_duration", 0) / 1000000 if response_data.get("total_duration") else 0,
             "title": "Стив из Майнкрафта"
         }
     )
