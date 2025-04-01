@@ -28,9 +28,9 @@ app.add_middleware(
 )
 
 # Default Ollama URL
-OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://192.168.1.221:11434")
-# Устанавливаем хост для библиотеки ollama
-ollama.host = OLLAMA_BASE_URL
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+# Создаем клиент Ollama
+client = ollama.Client(host=OLLAMA_BASE_URL)
 
 messages_list: dict[int, MsgPayload] = {}
 
@@ -48,10 +48,9 @@ def about() -> dict[str, str]:
 @app.get("/health")
 def health_check():
     """Check if Ollama is running and accessible."""
-    models = ollama.list()
     try:
         # Получаем информацию о списке моделей для проверки подключения
-        models = ollama.list()
+        models = client.list()
         return {
             "status": "ok", 
             "ollama_status": "running",
@@ -86,8 +85,8 @@ def message_items() -> dict[str, dict[int, MsgPayload]]:
 def list_models():
     """Получить список доступных моделей из Ollama."""
     try:
-        # Используем официальный клиент для получения списка моделей
-        result = ollama.list()
+        # Используем клиент для получения списка моделей
+        result = client.list()
         
         # Форматируем ответ
         if "models" in result:
@@ -121,8 +120,8 @@ def generate(request: OllamaRequest):
         system = request.system
         options = request.options or {}
         
-        # Используем официальный клиент для генерации ответа
-        response = ollama.generate(
+        # Используем клиент для генерации ответа
+        response = client.generate(
             model=model,
             prompt=prompt,
             system=system,
@@ -174,8 +173,8 @@ def chat(request: OllamaRequest):
             "content": prompt
         })
         
-        # Используем официальный клиент для генерации ответа
-        response = ollama.chat(
+        # Используем клиент для генерации ответа в формате чата
+        response = client.chat(
             model=model,
             messages=messages,
             options=options
@@ -206,7 +205,7 @@ def stream(request: OllamaRequest):
     # Функция для потоковой генерации
     def generate():
         try:
-            for chunk in ollama.generate(
+            for chunk in client.generate(
                 model=model,
                 prompt=prompt,
                 system=system,
@@ -232,8 +231,8 @@ def stream(request: OllamaRequest):
 def completions(prompt: str = "", model: str = "llama3.1:latest"):
     """Простой эндпоинт для генерации текста."""
     try:
-        # Используем официальный клиент для генерации текста
-        response = ollama.generate(
+        # Используем клиент для генерации текста
+        response = client.generate(
             model=model,
             prompt=prompt
         )
@@ -265,13 +264,31 @@ def pull_model(model_name: str):
         
         # В реальном приложении здесь можно запустить фоновый процесс
         # Но для демонстрации сделаем синхронную загрузку
-        ollama.pull(model_name)
+        client.pull(model_name)
         
         return result
     except Exception as e:
         return {
             "status": "error",
             "message": f"Failed to pull model: {str(e)}"
+        }
+
+
+# Добавим упрощенный эндпоинт для чата для демонстрации
+@app.post("/simple-chat")
+def simple_chat(model: str = "llama3.1", message: str = ""):
+    """Простой интерфейс чата."""
+    try:
+        response = client.chat(
+            model=model,
+            messages=[{"role": "user", "content": message}]
+        )
+        
+        return response
+    except Exception as e:
+        return {
+            "error": f"Ошибка в чате: {str(e)}",
+            "status_code": 500
         }
 
 
