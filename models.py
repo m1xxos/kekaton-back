@@ -3,7 +3,7 @@ from pydantic import BaseModel, Field
 
 
 class OllamaRequest(BaseModel):
-    model: str
+    model: str = "mistral"
     prompt: str
     system: Optional[str] = None
     template: Optional[str] = None
