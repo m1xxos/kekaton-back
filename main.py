@@ -1,8 +1,12 @@
 import os
 import json
+import uuid
+import datetime
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, HTMLResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 from dotenv import load_dotenv
 from models import OllamaRequest, OllamaResponse, ErrorResponse, MsgPayload
 
@@ -20,6 +24,15 @@ app = FastAPI(
     description="API для проксирования запросов к Ollama LLM",
     version="0.1.0"
 )
+
+# Словарь для хранения ответов
+responses_storage = {}
+
+# Настройка шаблонов
+templates = Jinja2Templates(directory="templates")
+
+# Настройка статических файлов (CSS, шрифты)
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # CORS middleware configuration
 app.add_middleware(
@@ -131,8 +144,28 @@ def generate(request: OllamaRequest):
             options=options
         )
         
-        # Форматируем ответ
+        # Генерируем уникальный ID для ответа
+        response_id = str(uuid.uuid4())
+        
+        # Форматируем и сохраняем ответ
+        response_data = {
+            "model": model,
+            "response": response.get("response"),
+            "prompt": prompt,
+            "done": True,
+            "total_duration": response.get("total_duration"),
+            "created_at": datetime.datetime.now().isoformat()
+        }
+        
+        # Сохраняем ответ в хранилище
+        responses_storage[response_id] = response_data
+        
+        # Возвращаем и URL для просмотра ответа, и оригинальные данные
         return {
+            "response_id": response_id,
+            "url": f"/minecraft-view/{response_id}",
+            "preview": response_data["response"][:100] + "..." if len(response_data["response"]) > 100 else response_data["response"],
+            # Оригинальные данные для обратной совместимости
             "model": response.get("model"),
             "response": response.get("response"),
             "done": True,
@@ -158,7 +191,6 @@ def chat(request: OllamaRequest):
         # Извлекаем параметры из запроса
         model = request.model
         prompt = request.prompt
-        # Используем заданное системное сообщение или наше по умолчанию
         system = request.system or DEFAULT_SYSTEM_MESSAGE
         options = request.options or {}
         
@@ -183,6 +215,30 @@ def chat(request: OllamaRequest):
             options=options
         )
         
+        # Генерируем уникальный ID для ответа
+        response_id = str(uuid.uuid4())
+        
+        # Подготавливаем данные для сохранения
+        response_content = response.get("message", {}).get("content", "")
+        
+        # Форматируем ответ для сохранения
+        response_data = {
+            "model": model,
+            "response": response_content,
+            "prompt": prompt,
+            "done": True,
+            "created_at": datetime.datetime.now().isoformat()
+        }
+        
+        # Сохраняем ответ в хранилище
+        responses_storage[response_id] = response_data
+        
+        # Добавляем информацию о URL для просмотра ответа
+        response["minecraft_view"] = {
+            "response_id": response_id,
+            "url": f"/minecraft-view/{response_id}"
+        }
+        
         return response
         
     except Exception as e:
@@ -190,6 +246,28 @@ def chat(request: OllamaRequest):
             error=f"Ошибка при обработке чата: {str(e)}",
             status_code=500
         )
+    
+@app.get("/minecraft-view/{response_id}", response_class=HTMLResponse)
+def minecraft_view(request: Request, response_id: str):
+    """Отобразить ответ на странице в стиле Minecraft."""
+    if response_id not in responses_storage:
+        return templates.TemplateResponse(
+            "error.html", 
+            {"request": request, "error": "Ответ не найден"}
+        )
+    
+    response_data = responses_storage[response_id]
+    return templates.TemplateResponse(
+        "minecraft.html", 
+        {
+            "request": request, 
+            "response": response_data["response"], 
+            "prompt": response_data["prompt"],
+            "model": response_data["model"],
+            "total_duration": response_data.get("total_duration", 0) / 1000000 if response_data.get("total_duration") else 0,  # Конвертируем в секунды
+            "title": "Стив из Майнкрафта"
+        }
+    )
 
 
 if __name__ == "__main__":

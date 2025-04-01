@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }}</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='/css/minecraft-style.css') }}">
+    <!-- Добавляем Minecraft шрифт с Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="minecraft-container">
+        <div class="minecraft-window">
+            <div class="minecraft-header">
+                <h1>Стив из Майнкрафта отвечает</h1>
+            </div>
+            
+            <div class="minecraft-content">
+                <div class="chat-window">
+                    <div class="chat-bubble user-bubble">
+                        <span class="user-name">Игрок:</span>
+                        <p>{{ prompt }}</p>
+                    </div>
+                    
+                    <div class="chat-bubble steve-bubble">
+                        <span class="steve-name">Стив:</span>
+                        <p>{{ response }}</p>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="minecraft-footer">
+                <div class="stats">
+                    <span>Модель: {{ model }}</span>
+                    <span>Время ответа: {{ "%.2f"|format(total_duration) }} сек.</span>
+                </div>
+                <button class="minecraft-button" onclick="window.history.back()">Назад</button>
+                <button class="minecraft-button" onclick="location.reload()">Перезагрузить</button>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

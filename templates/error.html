@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ошибка</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='/css/minecraft-style.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="minecraft-container">
+        <div class="minecraft-window error-window">
+            <div class="minecraft-header">
+                <h1>Ошибка</h1>
+            </div>
+            
+            <div class="minecraft-content">
+                <div class="error-message">
+                    <h2>{{ error }}</h2>
+                    <p>Что-то пошло не так... Может быть, крипер взорвал ваш запрос?</p>
+                </div>
+            </div>
+            
+            <div class="minecraft-footer">
+                <button class="minecraft-button" onclick="window.history.back()">Назад</button>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
